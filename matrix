@@ -1,0 +1,280 @@
+#!/bin/bash -e
+# Program 1: matrices
+# Tyler McSilva
+
+
+### Returns dimensions of matrix supplied through stdin or the first argument
+dims(){
+	# Get matrix, either from file or stdin
+	matrix="$(getMatrix $@)"
+	
+	# Print the dimensions
+	printf "%s\n" "$( numberOfRows "$matrix") $( numberOfColumns "$matrix" )"
+	
+	# Exit sucessfully
+	exit 0
+}
+
+### Transposes the matrix supplied through stdin or the first argument
+transpose(){
+	# Get matrix, from either file or stdin
+	matrix="$(getMatrix $@)"
+
+	# Get number of columns in matrix
+	cols=$( numberOfColumns "$matrix" )
+	
+	# For each of the columns
+	for i in $(seq 1 $cols)
+	do
+		# Cut the column, replace newlines with tabs, and remove last 2 characters from row
+		#	cut -f $i <<< "$matrix" | tr "\n" "\t" | rev | cut -c 2- | rev
+
+		printf "%s\n" "$( cut -f $i <<< "$matrix" | tr "\n" "\t" | head --bytes -1 )"
+	done
+
+	# Exit sucessfully
+	exit 0
+}
+
+### Returns the mean of each column of the matrix supplied through stdin or the 
+### first argument
+mean() {
+	# Get matrix, from either file or stdin
+	matrix="$(getMatrix $@)"
+
+	# Create alias for tempfile
+	output=tempfile$$
+	# Get number of columns
+	cols=$( numberOfColumns "$matrix" )
+
+	# For every column in matrix
+	for i in $(seq 1 $cols)
+	do
+		# Get column as a row
+		col="$( cut -f $i <<< "$matrix" | tr "\n" "\t" | head --bytes -1 )"
+		# Set divisor and sum to zero
+		divisor=0
+		sum=0
+		# For each number in the column
+		for x in $col
+		do
+			# Add to the sum
+			sum=$(( sum + x ))
+			# Increase the divisor
+			divisor=$(( divisor+1 ))
+		done
+		# Store mean as a line in the output file
+		echo "$(( (sum + (divisor/2)*( (sum>0)*2-1 )) / divisor  ))" >> $output
+	done
+	
+	# Print the output file to the console
+	printf "%s\n" "$( cat "$output" | tr "\n" "\t" | head --bytes -1 )"
+	
+	# Cleanup temp files
+	rm -f tempfile*
+
+	# Exit sucessfully	
+	exit 0
+}
+
+### Takes 2 matricies and adds them together
+add() {
+	# Verify number of arguments
+	if [ $# -ne 2 ]
+	then
+		printerr "Incorrect number of arguments"
+		exit 1
+	fi
+    
+	# Get matrices
+    	matrix1=$( getMatrixFromFile "$1" )
+	matrix2=$( getMatrixFromFile "$2" )
+
+	# Verify dimensions of matricies are compatible
+	if [ "$( dims <<< "$matrix1" )" != "$( dims <<< "$matrix2" )" ]
+	then
+		printerr "Matricies are incompatible"
+		exit 1
+	fi
+
+	# Create alias for tempfile
+	tempfile=tempfile$$
+	# Get number of rows in matrix 1
+	numRows=$( numberOfRows "$matrix1" )
+	
+	# For number of rows in matrix 1
+	for i in $(seq 1 $numRows)
+	do
+		# Clear out the tempfile
+		> $tempfile
+	
+		# Get a row from each of the matricies
+		row1=$( echo "$matrix1" | head -n $i | tail -n 1 )
+		row2=$( echo "$matrix2" | head -n $i | tail -n 1 )
+		# Get number of columns from row 1
+		cols=$( numberOfColumns "$row1" )
+
+		# For each of the columns
+		for x in $( seq 1 $cols)
+		do
+			# Cut a and b from each row
+			a="$(cut -f $x <<< "$row1")"
+			b="$(cut -f $x <<< "$row2")"
+			# Store the sum in the tempfile
+			echo $(( a + b )) >> $tempfile
+		done
+		
+		# Output the tempfile to the console as a row
+		printf "%s\n" "$( cat "$tempfile" | cut -f 1 | tr "\n" "\t" | head --bytes -1 )"
+	done
+
+	# Cleanup tempfile
+	rm -f tempfile*
+	
+	# Exit Sucessfully
+	exit 0
+}
+
+### Takes 2 matricies and multiples them together
+multiply() {
+	# Verify number of arguments
+    	if [ $# -ne 2 ]
+    	then
+        	printerr "Incorrect number of arguments"
+        	exit 1
+    	fi
+    
+	# Get matricies
+   	matrix1=$( getMatrixFromFile "$1" )
+    	matrix2=$( getMatrixFromFile "$2" )
+	
+	# Verify matricies can be multiplied
+	if [ "$( numberOfColumns "$matrix1")" != "$( numberOfRows "$matrix2" )" ]
+	then
+		printerr "Matricies are incompatible"
+		exit 1
+	fi
+	
+	# Create alias for tempfile
+ 	tempfile=tempfile$$
+
+	# Transpose matrix2 for easier multiplication
+	matrix2_transposed="$(transpose "$2")"
+
+	# Get number of rows for matrix 1
+	numRows=$( numberOfRows "$matrix1")
+	# Get number of cols for both matricies
+	numCols_m1=$( numberOfColumns "$matrix1")
+	numCols_m2=$( numberOfColumns "$matrix2")
+	
+	# For every row in matrix 1
+	for x in $(seq 1 $numRows)
+	do
+		# Clear tempfile
+		> $tempfile
+		# For every element in the matrix 2 row
+		for y in $(seq 1 $numCols_m2)
+		do	
+			# Retrieve rows from both matricies
+			m1_r=$( echo "$matrix1" | head -n $x | tail -n 1 )
+			m2_r=$( echo "$matrix2_transposed" | head -n $y | tail -n 1 )
+			product=0
+			# From every element in the rows 
+			for z in $(seq 1 $numCols_m1)
+			do
+				# Retreive elements
+				a=$( cut -f $z <<< "$m1_r" )
+				b=$( cut -f $z <<< "$m2_r" )
+				# Multiply them together and add to product
+				product=$(( product + ( a * b ) ))	
+			done	
+			# Store product as row in tempfile
+			echo "$product" >> $tempfile
+		done
+		# Print tempfile as row
+		printf "%s\n" "$( cat "$tempfile" | cut -f 1 | tr "\n" "\t" | head --bytes -1 )"
+	done
+
+	# Cleanup tempfiles
+	rm -f tempfile*
+
+	# Exit sucessfully
+	exit 0
+}
+
+### HELPER - Prints errors to console
+printerr() {
+	printf "$@ \n" 1>&2
+}
+
+### HELPER - Gets matrix from either stdin or file, checks for zero-value
+getMatrix(){
+	# Verify only <=1 argument
+	if [ $# -gt 1 ]
+	then	
+		printerr "Too many arguments"
+		exit 1
+	fi
+
+	# If argument 1 is zero-length
+	if [ -z "$1" ]
+	then
+		# Grab the value from stdin
+		matrix="$(cat)"
+	else
+		# Grab the matrix from file
+		matrix="$(getMatrixFromFile "$1")"
+	fi
+    
+	# Verify matrix has contents
+   	if [ -z "$matrix" ]
+	then
+		printerr "Nothing in Matrix..."
+		exit 1
+	fi
+    	
+	# Echo matrix
+	echo "$matrix"
+}
+
+### HELPER - Gets matrix from file, checks if zero, returns if okay
+getMatrixFromFile() {
+	# Verify file is a file
+	if [ -e "$1" ]
+	then
+		# Get contents of file
+		matrix="$(cat "$1")"
+		# Verify matrix is not empty
+        	if [ -z "$matrix" ]
+        	then
+            		printerr "Error reading files"
+            		exit 1
+        	else
+			# Return matrix
+            		echo "$matrix"
+        	fi
+	else
+		printerr "File does not exist"
+		exit 1
+	fi
+}
+
+### HELPER - Returns number of rows in matrix passed as argument
+numberOfRows() {
+	echo $( echo "$1" | wc -l )
+}
+
+### HELPER - Returns number of columns in matrix passed as argument
+numberOfColumns() {
+	echo $( echo "$1" | head -n 1 | wc -w )
+}
+
+
+### MAIN PART OF FUNCTION
+if [ $# -eq 0 ]
+then
+	printerr "Insufficient arguments"
+	exit 1
+else
+	$1 "${@:2}"
+fi
